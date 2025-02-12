@@ -1,0 +1,20 @@
+# Core Framework Dependencies
+quart
+streamlit
+python-dotenv
+openai
+
+# Google Calendar API Dependencies
+google-auth
+google-auth-oauthlib
+google-api-python-client
+google-auth-httplib2
+
+# Recall.ai Dependencies
+# Removed broken Recall.ai dependency.
+# We now use a local stub for Recall.ai, located at backend/recall_sdk.py
+aiohttp
+recallai
+
+# HTTP Client for Frontend
+requests

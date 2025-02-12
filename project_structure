@@ -1,0 +1,12 @@
+recall-demo/
+├── .env
+├── requirements.txt
+├── backend/
+│   ├── __init__.py
+│   ├── app.py
+│   ├── calendar_service.py
+│   ├── recall_service.py
+│   └── article_generator.py
+├── frontend/
+│   └── streamlit_app.py
+└── README.md 

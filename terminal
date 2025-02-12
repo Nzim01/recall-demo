@@ -1,0 +1,6 @@
+mkdir recall-demo
+cd recall-demo
+python -m venv venv
+# Activate venv (Windows: venv\Scripts\activate, Unix: source venv/bin/activate)
+pip install quart streamlit python-dotenv google-auth google-auth-oauthlib \
+    google-auth-httplib2 google-api-python-client recall-sdk aiohttp 
