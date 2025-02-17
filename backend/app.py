@@ -99,6 +99,7 @@ def schedule_bot_for_event(event_id, meeting_url):
         return response.json()
     else:
         print(f"Error scheduling bot: {response.text}")
+        print(f"Full Scheduling ErrorResponse: {response.json()}")
         return None
 
 
@@ -147,8 +148,10 @@ async def schedule_meeting():
 
     print(f"Meeting URL: {meeting_url}")
 
-    # Schedule Recall.ai bot for the meeting
+    # Create bot
     bot_data = create_bot(meeting_url)
+
+    # Schedule Recall.ai bot for the meeting
     print(f"Bot data: {bot_data}")
     print(f"Event ID: {event_id}")
     print(f"Created event: {created_event}")
