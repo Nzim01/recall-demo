@@ -1,4 +1,4 @@
-from quart import Quart, request, jsonify
+from quart import Quart, request, jsonify, abort
 import os
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
@@ -8,6 +8,8 @@ from googleapiclient.discovery import build
 import requests
 import openai
 from datetime import datetime
+import hmac
+import hashlib
 
 load_dotenv()
 
@@ -104,17 +106,35 @@ def schedule_bot_for_event(event_id, meeting_url):
 
 
 def get_transcript(bot_id):
-    url = BASE_URL + f'transcripts/{bot_id}'  
+    url = f'https://us-west-2.recall.ai/api/v1/bot/{bot_id}/transcript/'
+
     headers = {
         'Authorization': f'Token {os.getenv("RECALL_API_KEY")}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
     }
 
     response = requests.get(url, headers=headers)
+    print(f"Transcript response: {response.json()}")
     if response.status_code == 200:
         return response.json()  
     else:
         print(f"Error retrieving transcript: {response.text}")
         return None
+
+def verify_recall_signature(request_data, signature_header):
+    """Verify the webhook signature from Recall.ai"""
+    webhook_secret = os.getenv('RECALL_WEBHOOK_SECRET')
+    if not webhook_secret:
+        return True  # Skip verification if no secret is set
+        
+    computed_signature = hmac.new(
+        webhook_secret.encode(),
+        request_data,
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(computed_signature, signature_header)
 
 @app.route('/schedule-meeting', methods=['POST'])
 async def schedule_meeting():
@@ -166,23 +186,63 @@ async def schedule_meeting():
     else:
         return jsonify({"status": "error", "message": "Failed to schedule bot"}), 500
 
-@app.route('/generate-article/<bot_id>', methods=['GET'])
-async def generate_article(bot_id):
-    transcript_data = get_transcript(bot_id)
-    if transcript_data:
-        transcript_text = transcript_data.get('text', '')
-        article = generate_article(transcript_text)
-        return jsonify({'article': article})
-    else:
-        return jsonify({"status": "error", "message": "Failed to retrieve transcript"}), 500
+# @app.route('/generate-article/<bot_id>', methods=['GET'])
+# async def generate_article(bot_id):
+#     transcript_data = get_transcript(bot_id)
+#     print(f"Transcript data: {transcript_data}")
+#     if transcript_data:
+#         transcript_text = transcript_data.get('text', '')
+#         article = generate_article(transcript_text)
+#         return jsonify({'article': article})
+#     else:
+#         return jsonify({"status": "error", "message": "Failed to retrieve transcript"}), 500
 
-def generate_article(transcript):
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=f"Generate a detailed article based on the following conversation:\n\n{transcript}",
-        max_tokens=1000
-    )
-    return response.choices[0].text.strip()
+def old_generate_article(transcript):
+    print(f"Transcript in generate article: {transcript}")
+    # response = openai.Completion.create(
+    #     engine="text-davinci-003",
+    #     prompt=f"Generate a detailed article based on the following conversation:\n\n{transcript}",
+    #     max_tokens=1000
+    # )
+    # return response.choices[0].text.strip()
+    return transcript;
+
+def generate_article(transcript_data):
+    print(f"Transcript in generate article: {transcript_data}")
+    
+    # Combine all words from all speakers into a single text
+    full_transcript = ""
+    for segment in transcript_data:
+        speaker = segment['speaker']
+        words = ' '.join(word['text'] for word in segment['words'])
+        full_transcript += f"{speaker}: {words}\n"
+    
+    # For now, just return the formatted transcript
+    # In production, you would use OpenAI or another service to generate an article
+    return full_transcript
+
+@app.route('/webhook/recall', methods=['POST'])
+async def recall_webhook():
+    data = await request.get_json()
+    print(f"Received webhook data: {data}")
+    
+    if data.get('event') == 'bot.status_change':
+        bot_data = data.get('data', {})
+        bot_id = bot_data.get('bot_id')
+        status = bot_data.get('status', {})
+        status_code = status.get('code')
+        
+        print(f"Bot {bot_id} status changed to: {status_code}")
+        
+        if status_code == 'done':
+            transcript_data = get_transcript(bot_id)
+            print(f"Transcript in recall webhook: {transcript_data}")
+            if transcript_data:
+                # Pass the entire transcript_data to generate_article
+                article = generate_article(transcript_data)
+                print(f"Generated article for bot {bot_id}: {article}")
+                
+    return jsonify({'status': 'success'}), 200
 
 if __name__ == '__main__':
     app.run(port=5001)
