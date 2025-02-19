@@ -10,6 +10,7 @@ import openai
 from datetime import datetime
 import hmac
 import hashlib
+from uuid import uuid4
 
 load_dotenv()
 
@@ -35,6 +36,25 @@ calendar_service = build('calendar', 'v3', credentials=creds)
 openai.api_key = os.getenv('OPENAI_API_KEY')
 
 BASE_URL = 'https://us-west-2.recall.ai/api/v1/bot/'  # Corrected URL for Recall.ai
+
+# === Register Google Calendar Watch Channel ===
+def register_watch_channel():
+    # Build the payload for the watch request using your public ngrok URL
+    watch_body = {
+        "id": str(uuid4()),  # A unique identifier for this watch channel
+        "type": "web_hook",
+        "address": os.getenv("APP_BASE_URL") + "/webhook/google"  # e.g. https://your-ngrok-url/webhook/google
+    }
+    try:
+        # Register the watch channel on the primary calendar
+        response = calendar_service.events().watch(calendarId='primary', body=watch_body).execute()
+        print("Google Calendar Watch Channel registered successfully:")
+        print(response)
+    except Exception as e:
+        print(f"Failed to register watch channel: {e}")
+
+# Register watch channel at server startup
+register_watch_channel()
 
 def create_bot(meeting_url):
     url = BASE_URL  # Ensure correct endpoint
@@ -243,6 +263,58 @@ async def recall_webhook():
                 print(f"Generated article for bot {bot_id}: {article}")
                 
     return jsonify({'status': 'success'}), 200
+
+# Helper function to fetch an event from Google Calendar
+def get_event(event_id):
+    try:
+        event = calendar_service.events().get(
+            calendarId='primary',
+            eventId=event_id,
+            singleEvents=True
+        ).execute()
+        return event
+    except Exception as e:
+        print(f"Error fetching event: {e}")
+        return None
+
+# === New endpoint for External Google Calendar Events ===
+@app.route('/webhook/google', methods=['POST'])
+async def google_calendar_webhook():
+    # Log headers from the push notification (for debugging)
+    headers = request.headers
+    print("Received Google Calendar push notification with headers:")
+    for key, value in headers.items():
+        print(f"{key}: {value}")
+
+    # Google may send a sync ping (with resource state "sync")
+    resource_state = headers.get("X-Goog-Resource-State", "")
+    if resource_state == "sync":
+        return jsonify({"status": "sync"}), 200
+
+    # In this simple demo we assume the event ID is provided as a query parameter.
+    # In production, your watch channel would track which events changed.
+    print(f"EVENT REQUEST ARGS: {request.args}")
+    event_id = request.args.get("event_id")
+    if not event_id:
+        print("No event_id provided in push notification.")
+        return jsonify({"status": "ignored", "message": "No event_id provided"}), 400
+
+    event = get_event(event_id)
+    if not event:
+        return jsonify({"status": "error", "message": "Event not found"}), 404
+
+    # Check if the event has a Google Meet (or similar) link in conference data
+    if 'conferenceData' in event and 'entryPoints' in event['conferenceData']:
+        meeting_url = event['conferenceData']['entryPoints'][0]['uri']
+        print(f"Scheduling Recall.ai bot for external event {event_id} with meeting URL: {meeting_url}")
+        bot_response = schedule_bot_for_event(event_id, meeting_url)
+        if bot_response:
+            return jsonify({"status": "success", "message": "Recall.ai bot scheduled for external event"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Failed to schedule Recall.ai bot"}), 500
+    else:
+        print("External event does not have conference data. Ignoring bot scheduling.")
+        return jsonify({"status": "ignored", "message": "No meeting URL found in event"}), 200
 
 if __name__ == '__main__':
     app.run(port=5001)

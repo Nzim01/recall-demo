@@ -45,3 +45,17 @@ class CalendarService:
         ).execute()
         
         return event 
+
+    def get_event(self, event_id):
+        from googleapiclient.discovery import build
+        service = build('calendar', 'v3', credentials=self.credentials)
+        try:
+            event = service.events().get(
+                calendarId='primary', 
+                eventId=event_id, 
+                singleEvents=True
+            ).execute()
+            return event
+        except Exception as e:
+            print(f"Error retrieving event: {e}")
+            return None 
