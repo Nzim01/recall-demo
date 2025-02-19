@@ -49,4 +49,15 @@ if 'bot_id' in st.session_state:
         if response.status_code == 200:
             st.write(response.json()['article'])
         else:
-            st.error("Failed to generate article") 
+            st.error("Failed to generate article")
+            
+    # Add separate button for revealing suggestion
+    if st.button("Reveal Suggestion"):
+        suggestion_response = requests.get(f"{BACKEND_URL}/get-latest-suggestion")
+        if suggestion_response.status_code == 200:
+            suggestion_data = suggestion_response.json()
+            if suggestion_data.get('suggestion'):
+                st.subheader("Article Suggestion")
+                st.write(suggestion_data['suggestion'])
+        else:
+            st.warning("No article suggestion available yet.") 

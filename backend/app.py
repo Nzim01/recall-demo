@@ -36,6 +36,8 @@ openai.api_key = os.getenv('OPENAI_API_KEY')
 
 BASE_URL = 'https://us-west-2.recall.ai/api/v1/bot/'  # Corrected URL for Recall.ai
 
+latest_article_suggestion = None  # To store the most recent article suggestion
+
 def create_bot(meeting_url):
     url = BASE_URL  # Ensure correct endpoint
     headers = {
@@ -221,8 +223,28 @@ def generate_article(transcript_data):
     # In production, you would use OpenAI or another service to generate an article
     return full_transcript
 
+def article_suggestion(source_information):
+    try:
+        payload = {'source_information': source_information}
+        newshookUrl = 'https://newshook-machine-individual-494231981629.us-central1.run.app/api'
+        response = requests.post(f'{newshookUrl}/individual/article-suggestion', json=payload)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {'error': 'Failed to get article suggestion', 'status_code': response.status_code}
+    except Exception as e:
+        return str(e)
+
+@app.route('/get-latest-suggestion', methods=['GET'])
+async def get_latest_suggestion():
+    global latest_article_suggestion
+    if latest_article_suggestion:
+        return jsonify({'suggestion': latest_article_suggestion})
+    return jsonify({'suggestion': None}), 404
+
 @app.route('/webhook/recall', methods=['POST'])
 async def recall_webhook():
+    global latest_article_suggestion
     data = await request.get_json()
     print(f"Received webhook data: {data}")
     
@@ -241,6 +263,10 @@ async def recall_webhook():
                 # Pass the entire transcript_data to generate_article
                 article = generate_article(transcript_data)
                 print(f"Generated article for bot {bot_id}: {article}")
+                response = article_suggestion(str(article) + " suggest an article based on the business and prospect summary. the article shouldn't be about the prospect or business directly, but instead aboutthis company and something interesting about the industry and how this company fits into it")
+                print(f"Article suggestion response: {response}")
+                formated_response = jsonify({'suggestion': response})
+                latest_article_suggestion = formated_response  # Store the latest suggestion
                 
     return jsonify({'status': 'success'}), 200
 
