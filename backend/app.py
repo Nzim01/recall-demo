@@ -124,20 +124,6 @@ def get_transcript(bot_id):
         print(f"Error retrieving transcript: {response.text}")
         return None
 
-def verify_recall_signature(request_data, signature_header):
-    """Verify the webhook signature from Recall.ai"""
-    webhook_secret = os.getenv('RECALL_WEBHOOK_SECRET')
-    if not webhook_secret:
-        return True  # Skip verification if no secret is set
-        
-    computed_signature = hmac.new(
-        webhook_secret.encode(),
-        request_data,
-        hashlib.sha256
-    ).hexdigest()
-    
-    return hmac.compare_digest(computed_signature, signature_header)
-
 @app.route('/schedule-meeting', methods=['POST'])
 async def schedule_meeting():
     data = await request.get_json()
@@ -187,27 +173,6 @@ async def schedule_meeting():
         })
     else:
         return jsonify({"status": "error", "message": "Failed to schedule bot"}), 500
-
-# @app.route('/generate-article/<bot_id>', methods=['GET'])
-# async def generate_article(bot_id):
-#     transcript_data = get_transcript(bot_id)
-#     print(f"Transcript data: {transcript_data}")
-#     if transcript_data:
-#         transcript_text = transcript_data.get('text', '')
-#         article = generate_article(transcript_text)
-#         return jsonify({'article': article})
-#     else:
-#         return jsonify({"status": "error", "message": "Failed to retrieve transcript"}), 500
-
-def old_generate_article(transcript):
-    print(f"Transcript in generate article: {transcript}")
-    # response = openai.Completion.create(
-    #     engine="text-davinci-003",
-    #     prompt=f"Generate a detailed article based on the following conversation:\n\n{transcript}",
-    #     max_tokens=1000
-    # )
-    # return response.choices[0].text.strip()
-    return transcript;
 
 def generate_article(transcript_data):
     print(f"Transcript in generate article: {transcript_data}")
@@ -263,10 +228,9 @@ async def recall_webhook():
                 # Pass the entire transcript_data to generate_article
                 article = generate_article(transcript_data)
                 print(f"Generated article for bot {bot_id}: {article}")
-                response = article_suggestion(str(article) + " suggest an article based on the business and prospect summary. the article shouldn't be about the prospect or business directly, but instead aboutthis company and something interesting about the industry and how this company fits into it")
+                response = article_suggestion(str(article) + " suggest an article based on the business and prospect summary. the article shouldn't be about the prospect or business directly, but instead about this company and something interesting about the industry and how this company fits into it")
                 print(f"Article suggestion response: {response}")
-                formated_response = jsonify({'suggestion': response})
-                latest_article_suggestion = formated_response  # Store the latest suggestion
+                latest_article_suggestion = response  # Store the latest suggestion
                 
     return jsonify({'status': 'success'}), 200
 
