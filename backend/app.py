@@ -32,34 +32,32 @@ load_dotenv()
 
 app = Quart(__name__)
 
-# Initialize credentials and services
+# Instead, initialize these as None
+creds = None
+calendar_service = None
+
+# Global state
+latest_article_suggestion = None
+
 def initialize_google_credentials():
     """Initialize and return Google Calendar credentials."""
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     
-    # if not creds or not creds.valid:
-    #     if creds and creds.expired and creds.refresh_token:
-    #         creds.refresh(Request())
-    #     else:
-    #         flow = InstalledAppFlow.from_client_secrets_file(
-    #             os.getenv('GOOGLE_CREDENTIALS_PATH'), SCOPES
-    #         )
-    #         creds = flow.run_local_server(port=5001)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                os.getenv('GOOGLE_CREDENTIALS_PATH'), SCOPES
+            )
+            creds = flow.run_local_server(port=5001)
         
-    #     with open('token.json', 'w') as token:
-    #         token.write(creds.to_json())
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
     
     return creds
-
-# Initialize services
-creds = initialize_google_credentials()
-calendar_service = build('calendar', 'v3', credentials=creds)
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
-# Global state
-latest_article_suggestion = None
 
 def create_bot(meeting_url: str) -> dict:
     """Create a Recall.ai bot for meeting transcription."""
@@ -264,9 +262,55 @@ async def store_credentials():
         global calendar_service
         calendar_service = build('calendar', 'v3', credentials=creds)
         
+        # Persist credentials to token.json
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+        
         return jsonify({"status": "success"})
     except Exception as e:
         print(f"Error storing credentials: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/check-auth', methods=['GET'])
+async def check_auth():
+    """Check if valid credentials exist"""
+    try:
+        if os.path.exists('token.json'):
+            with open('token.json', 'r') as token:
+                creds_data = token.read()
+                creds = Credentials.from_authorized_user_info(eval(creds_data), SCOPES)
+                
+                if creds and creds.valid:
+                    try:
+                        # Build service and make a minimal API call
+                        global calendar_service
+                        calendar_service = build('calendar', 'v3', credentials=creds)
+                        # Try to access user's calendar list - this will fail if user hasn't granted access
+                        calendar_service.calendarList().list(maxResults=1).execute()
+                        return jsonify(eval(creds_data))
+                    except Exception as e:
+                        print(f"API access failed: {str(e)}")
+                        # Remove invalid token
+                        os.remove('token.json')
+                        return jsonify({"status": "no_auth"}), 401
+                
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        creds.refresh(Request())
+                        # Update token.json with refreshed credentials
+                        with open('token.json', 'w') as token:
+                            token.write(creds.to_json())
+                        return jsonify(eval(creds.to_json()))
+                    except Exception:
+                        # Remove invalid token if refresh fails
+                        os.remove('token.json')
+                        return jsonify({"status": "no_auth"}), 401
+        
+        return jsonify({"status": "no_auth"}), 401
+    except Exception as e:
+        print(f"Error checking auth: {str(e)}")
+        if os.path.exists('token.json'):
+            os.remove('token.json')
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 
 load_dotenv()
 BACKEND_URL = os.getenv('BACKEND_URL')
@@ -13,10 +14,36 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def check_google_auth():
     """Check if user is authenticated with Google"""
-    if 'google_creds' not in st.session_state:
+    try:
+        # First check session state
+        if 'google_creds' not in st.session_state:
+            # If not in session, check if backend has stored credentials
+            response = requests.get(f"{BACKEND_URL}/check-auth")
+            if response.status_code == 200:
+                st.session_state.google_creds = response.json()
+                return True
+            return False
+        
+        # Verify existing session credentials
+        creds = Credentials.from_authorized_user_info(st.session_state.google_creds, SCOPES)
+        if not creds or not creds.valid:
+            del st.session_state.google_creds
+            return False
+        
+        # Verify we can actually access the calendar
+        try:
+            service = build('calendar', 'v3', credentials=creds)
+            service.calendarList().list(maxResults=1).execute()
+            return True
+        except Exception:
+            if 'google_creds' in st.session_state:
+                del st.session_state.google_creds
+            return False
+            
+    except Exception:
+        if 'google_creds' in st.session_state:
+            del st.session_state.google_creds
         return False
-    creds = Credentials.from_authorized_user_info(st.session_state.google_creds, SCOPES)
-    return creds and creds.valid
 
 def google_auth():
     """Handle Google Authentication"""
@@ -24,7 +51,11 @@ def google_auth():
         os.getenv('GOOGLE_CREDENTIALS_PATH'),
         SCOPES
     )
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_local_server(
+        port=0,
+        authorization_prompt_message='Please login with Google',
+        success_message='Authentication successful! You may close this tab.'
+    )
     
     # Store credentials in session state
     st.session_state.google_creds = eval(creds.to_json())
