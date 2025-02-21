@@ -13,9 +13,9 @@ import requests
 from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow 
 from googleapiclient.discovery import build
-from quart import Quart, request, jsonify, abort
+from quart import Quart, request, jsonify, abort, session
 
 # Configuration Constants
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -39,17 +39,17 @@ def initialize_google_credentials():
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                os.getenv('GOOGLE_CREDENTIALS_PATH'), SCOPES
-            )
-            creds = flow.run_local_server(port=5001)
+    # if not creds or not creds.valid:
+    #     if creds and creds.expired and creds.refresh_token:
+    #         creds.refresh(Request())
+    #     else:
+    #         flow = InstalledAppFlow.from_client_secrets_file(
+    #             os.getenv('GOOGLE_CREDENTIALS_PATH'), SCOPES
+    #         )
+    #         creds = flow.run_local_server(port=5001)
         
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+    #     with open('token.json', 'w') as token:
+    #         token.write(creds.to_json())
     
     return creds
 
@@ -252,6 +252,22 @@ async def recall_webhook():
                 latest_article_suggestion = response  # Store the latest suggestion
                 
     return jsonify({'status': 'success'}), 200
+
+@app.route('/store-credentials', methods=['POST'])
+async def store_credentials():
+    """Store Google credentials sent from frontend"""
+    try:
+        creds_data = await request.get_json()
+        creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
+        
+        # Update the global calendar_service with new credentials
+        global calendar_service
+        calendar_service = build('calendar', 'v3', credentials=creds)
+        
+        return jsonify({"status": "success"})
+    except Exception as e:
+        print(f"Error storing credentials: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5001)
